@@ -1,4 +1,5 @@
 mod getTokens;
+use getTokens::Token;
 use reqwest::Error;
 use std::env;
 
@@ -25,7 +26,7 @@ async fn main() -> Result<(), Error> {
     let args: Vec<String> = env::args().collect();
     let rpc_endpoint = &args[1];
 
-    getTokens::get_tokens().await?;
+    let tokens: Vec<Token> = getTokens::get_tokens().await?;
 
     get_balances(rpc_endpoint).await.unwrap();
 
