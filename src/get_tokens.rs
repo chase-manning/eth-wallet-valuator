@@ -1,6 +1,5 @@
 use reqwest::Error;
 use serde::{Deserialize, Serialize};
-use serde_json::{Number, Value};
 
 #[derive(Deserialize, Debug)]
 struct OptionPlatform {
@@ -51,7 +50,7 @@ async fn get_prices() -> Result<Vec<Price>, Error> {
     Ok(prices)
 }
 
-pub async fn get_coins() -> Result<Vec<Coin>, Error> {
+async fn get_coins() -> Result<Vec<Coin>, Error> {
     let endpoint = format!("https://api.coingecko.com/api/v3/coins/list?include_platform=true");
     let response = reqwest::get(&endpoint).await?;
     let data: Vec<OptionCoin> = response.json().await?;
@@ -84,7 +83,7 @@ pub struct Token {
 }
 
 pub async fn get_tokens() -> Result<Vec<Token>, Error> {
-    let mut cache = {
+    let cache = {
         let text = std::fs::read_to_string("./token-cache.json").unwrap();
         serde_json::from_str::<Vec<Token>>(&text).unwrap()
     };
