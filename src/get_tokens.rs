@@ -76,10 +76,10 @@ async fn get_coins() -> Result<Vec<Coin>, Error> {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Token {
-    name: String,
-    symbol: String,
-    address: String,
-    price: f64,
+    pub name: String,
+    pub symbol: String,
+    pub address: String,
+    pub price: f64,
 }
 
 pub async fn get_tokens() -> Result<Vec<Token>, Error> {
@@ -109,6 +109,14 @@ pub async fn get_tokens() -> Result<Vec<Token>, Error> {
             }
         }
     }
+
+    // Adding ETH
+    tokens.push(Token {
+        name: "Ethereum".to_string(),
+        symbol: "ETH".to_string(),
+        address: "0x0000000000000000000000000000000000000000".to_string(),
+        price: prices.first().unwrap().current_price.unwrap(),
+    });
 
     std::fs::write(
         "./token-cache.json",
