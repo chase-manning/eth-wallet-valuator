@@ -1,4 +1,3 @@
-Add handling for decimals failing
 Run token value queries in parallel
 Cache Decimals
 Split up token stuff into a separate file
