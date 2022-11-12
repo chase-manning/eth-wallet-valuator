@@ -11,7 +11,11 @@ use web3::types::U256;
 use web3::Web3;
 
 fn bn_to_float(bn: U256, decimals: i32) -> f64 {
-    return (bn.low_u64() as f64) / (10.0f64).powi(decimals);
+    let mut float = bn.as_u128() as f64;
+    for _ in 0..decimals {
+        float /= 10.0;
+    }
+    float
 }
 
 async fn get_eth_balance(
@@ -174,11 +178,6 @@ async fn main() -> Result<(), Error> {
     let mut total_balance = get_eth_balance(rpc, account, &tokens).await.unwrap();
 
     // Getting ERC20 Token Balances
-    // Only dai tokens
-    // let tokens = tokens
-    //     .into_iter()
-    //     .filter(|t| t.symbol == "dai")
-    //     .collect::<Vec<Token>>();
     total_balance += get_token_balances(rpc, account, &tokens, &decimals).await?;
 
     // Printing total
