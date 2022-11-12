@@ -1,6 +1,7 @@
 mod get_tokens;
 use get_tokens::Token;
 use reqwest::Error;
+use std::collections::HashMap;
 use std::env;
 use web3::contract::Contract;
 use web3::transports::Http;
@@ -29,7 +30,11 @@ async fn get_eth_balance(
     Ok(eth_balance)
 }
 
-async fn get_decimals(contract: &Contract<Http>) -> web3::Result<U256> {
+async fn get_decimal(rpc_endpoint: &str, token: &Token) -> web3::Result<U256> {
+    let transport = Http::new(rpc_endpoint)?;
+    let web3 = Web3::new(transport);
+    let json = include_bytes!("abis/erc20.abi");
+    let contract = Contract::from_json(web3.eth(), token.address.parse().unwrap(), json).unwrap();
     let decimals: U256 = match contract
         .query(
             "decimals",
@@ -59,21 +64,29 @@ async fn get_balance(contract: &Contract<Http>, address: &str) -> web3::Result<U
         .await
     {
         Ok(balance) => balance,
-        _ => U256::from(0),
+        _ => {
+            println!("Error getting balance for {}", address);
+            U256::from(0)
+        }
     };
 
     Ok(balance)
 }
 
-async fn get_token_balance(rpc_endpoint: &str, address: &str, token: &Token) -> web3::Result<f64> {
+async fn get_token_balance(
+    rpc_endpoint: &str,
+    address: &str,
+    token: &Token,
+    decimals: &HashMap<String, i32>,
+) -> web3::Result<f64> {
     let transport = Http::new(rpc_endpoint)?;
     let web3 = Web3::new(transport);
     let json = include_bytes!("abis/erc20.abi");
     let contract = Contract::from_json(web3.eth(), token.address.parse().unwrap(), json).unwrap();
 
     let balance = get_balance(&contract, address).await?;
-    let decimals: U256 = get_decimals(&contract).await?;
-    let scaled = bn_to_float(balance, decimals.low_u32() as i32);
+    let decimals = decimals.get(&token.address).unwrap();
+    let scaled = bn_to_float(balance, *decimals);
     let value = scaled * token.price;
     if value > 0.0 {
         println!("- {}: ${:.2}", token.symbol.to_uppercase(), value);
@@ -85,12 +98,11 @@ async fn get_token_balances(
     rpc_endpoint: &str,
     address: &str,
     tokens: &Vec<Token>,
+    decimals: &HashMap<String, i32>,
 ) -> Result<f64, Error> {
-    let bodies = future::join_all(
-        tokens
-            .into_iter()
-            .map(|token| async move { get_token_balance(rpc_endpoint, address, &token).await }),
-    )
+    let bodies = future::join_all(tokens.into_iter().map(|token| async move {
+        get_token_balance(rpc_endpoint, address, &token, &decimals).await
+    }))
     .await;
 
     let mut total_balance = 0.0;
@@ -104,6 +116,41 @@ async fn get_token_balances(
     Ok(total_balance)
 }
 
+async fn get_decimals(
+    rpc_endpoint: &str,
+    tokens: &Vec<Token>,
+) -> Result<HashMap<String, i32>, Error> {
+    println!("Getting decimals...");
+    let decimals = {
+        let text = std::fs::read_to_string("./decimal-cache.json").unwrap();
+        serde_json::from_str::<HashMap<String, i32>>(&text).unwrap()
+    };
+    let decimal = |address: &str| -> i32 {
+        match decimals.get(address) {
+            Some(d) => *d,
+            None => 69,
+        }
+    };
+
+    let mut new_decimals: HashMap<String, i32> = HashMap::new();
+
+    for token in tokens {
+        let cached_decimal = decimal(&token.address);
+        if cached_decimal == 69 {
+            let decimals = get_decimal(&rpc_endpoint, &token).await.unwrap();
+            new_decimals.insert(token.address.clone(), decimals.low_u64() as i32);
+        } else {
+            new_decimals.insert(token.address.clone(), cached_decimal.clone());
+        }
+    }
+
+    let text = serde_json::to_string(&new_decimals).unwrap();
+    std::fs::write("./decimal-cache.json", text).unwrap();
+
+    println!("Got decimals!");
+    Ok(new_decimals)
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Error> {
     println!("");
@@ -113,16 +160,19 @@ async fn main() -> Result<(), Error> {
     let args: Vec<String> = env::args().collect();
     let account = &args[1];
     let rpc = &args[2];
-    let mut total_balance = 0.0;
 
     // Getting token data
     let tokens: Vec<Token> = get_tokens::get_tokens().await?;
 
+    // Getting deciamls
+    let decimals = get_decimals(rpc, &tokens).await?;
+
     // Getting ETH Balance
-    total_balance += get_eth_balance(rpc, account, &tokens).await.unwrap();
+    println!("Getting wallet balance...");
+    let mut total_balance = get_eth_balance(rpc, account, &tokens).await.unwrap();
 
     // Getting ERC20 Token Balances
-    total_balance += get_token_balances(rpc, account, &tokens).await?;
+    total_balance += get_token_balances(rpc, account, &tokens, &decimals).await?;
 
     // Printing total
     println!("====================================");
