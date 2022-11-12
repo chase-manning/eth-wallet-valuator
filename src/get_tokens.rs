@@ -90,21 +90,26 @@ pub async fn get_tokens() -> Result<Vec<Token>, Error> {
     if cache.len() > 0 {
         return Ok(cache);
     }
+    println!("Getting tokens...");
 
     let coins: Vec<Coin> = get_coins().await?;
     let prices: Vec<Price> = get_prices().await?;
 
     let mut tokens: Vec<Token> = Vec::new();
+    let mut addresses: Vec<String> = Vec::new();
     for coin in coins {
         for price in &prices {
             if coin.id == price.id {
                 if let Some(price) = price.current_price {
-                    tokens.push(Token {
-                        name: coin.name.clone(),
-                        symbol: coin.symbol.clone(),
-                        address: coin.ethereum.clone(),
-                        price,
-                    });
+                    if !addresses.contains(&coin.ethereum) {
+                        addresses.push(coin.ethereum.clone());
+                        tokens.push(Token {
+                            name: coin.name.clone(),
+                            symbol: coin.symbol.clone(),
+                            address: coin.ethereum.clone(),
+                            price,
+                        });
+                    }
                 }
             }
         }
@@ -124,5 +129,6 @@ pub async fn get_tokens() -> Result<Vec<Token>, Error> {
     )
     .unwrap();
 
+    println!("Got {} tokens", tokens.len());
     Ok(tokens)
 }
