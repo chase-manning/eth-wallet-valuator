@@ -1,4 +1,5 @@
 mod get_tokens;
+use futures::StreamExt;
 use get_tokens::Token;
 use reqwest::Error;
 use std::collections::HashMap;
@@ -8,8 +9,6 @@ use web3::transports::Http;
 use web3::types::H160;
 use web3::types::U256;
 use web3::Web3;
-
-use futures::future;
 
 fn bn_to_float(bn: U256, decimals: i32) -> f64 {
     return (bn.low_u64() as f64) / (10.0f64).powi(decimals);
@@ -65,7 +64,7 @@ async fn get_balance(contract: &Contract<Http>, address: &str) -> web3::Result<U
     {
         Ok(balance) => balance,
         _ => {
-            println!("Error getting balance for {}", address);
+            // println!("Error getting balance for {}", address);
             U256::from(0)
         }
     };
@@ -100,16 +99,19 @@ async fn get_token_balances(
     tokens: &Vec<Token>,
     decimals: &HashMap<String, i32>,
 ) -> Result<f64, Error> {
-    let bodies = future::join_all(tokens.into_iter().map(|token| async move {
+    let futures = tokens.into_iter().map(|token| async move {
         get_token_balance(rpc_endpoint, address, &token, &decimals).await
-    }))
-    .await;
+    });
+
+    let stream = futures::stream::iter(futures).buffer_unordered(16);
+
+    let balances = stream.collect::<Vec<_>>().await;
 
     let mut total_balance = 0.0;
-    for b in bodies {
-        match b {
-            Ok(b) => total_balance += b,
-            Err(e) => eprintln!("Got an error: {}", e),
+    for balance in balances {
+        match balance {
+            Ok(balance) => total_balance += balance,
+            _ => {}
         }
     }
 
@@ -172,6 +174,11 @@ async fn main() -> Result<(), Error> {
     let mut total_balance = get_eth_balance(rpc, account, &tokens).await.unwrap();
 
     // Getting ERC20 Token Balances
+    // Only dai tokens
+    // let tokens = tokens
+    //     .into_iter()
+    //     .filter(|t| t.symbol == "dai")
+    //     .collect::<Vec<Token>>();
     total_balance += get_token_balances(rpc, account, &tokens, &decimals).await?;
 
     // Printing total
